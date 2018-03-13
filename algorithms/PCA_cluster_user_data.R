@@ -14,7 +14,16 @@ file.name <- args[5]
 dbscan.eps <- as.numeric(args[6])
 if (is.na(cluster.by))
   cluster.by <- "columns"
+
+
+logfilename <- paste("/education/output/output_", algoName, "-log.txt", sep="")
+
+log_con <- file(logfilename,open="wt")
+sink(log_con)
+sink(log_con, type ="message")
   
+print("Step 1 of 6: Reading input data...")
+
 input.start <- Sys.time()
 print(paste0("/education/input/files/", file.name))
 data.orig <- fread(paste0("/education/input/files/", file.name), sep = "auto", data.table = FALSE, na.strings = c("NA", "N/A", "?"))
@@ -31,7 +40,11 @@ if (cluster.by == "rows") {
 }
 rm(data.orig)
 
+
+
 print("Computing principal components...")
+print("Step 2 of 6: Performing PCA...")
+
 data <- na.omit(data.orig.mod)
 rm(data.orig.mod)
 pca.start <- Sys.time()
@@ -46,7 +59,36 @@ fullData <- as.matrix(t(data))
 #   colnames(fullData)[1:3] <- c("PC1", "PC2", "PC3")
 # }
 
+#-----------------TSNE--------------------#
+
+print("Step 3 of 6: Performing t-SNE...")
+if(!require("Rtsne")) {
+    install.packages("Rtsne",repos = "http://cran.us.r-project.org")
+  }
+
+
+library(Rtsne)
+
+print("t-SNE starting")
+
+set.seed(50)
+
+if(nrow(t(data)) < 5){
+    tSNE.perplexity <- 0.3
+} else{
+  tSNE.perplexity <- min((nrow(t(data))-1)/3-1, 20)
+
+}
+
+tsneData <- Rtsne(as.matrix(t(data)), dims = 3, pca = FALSE, verbose = TRUE, perplexity = tSNE.perplexity)
+fullTsneData <- tsneData$Y
+
+print("t-SNE end")
+
+
 print("Algorithm running...")
+print("Step 4 of 6: Running clustering algorithm...")
+
 algo.start <- Sys.time()
 numClusters <- num
 if (algoName == "kmeans") {
@@ -55,7 +97,7 @@ if (algoName == "kmeans") {
   }
   library(cluster)
   fit <- kmeans(fullData, numClusters, nstart = 1)
-  mydata <- as.data.frame(fit$cluster)
+  mydata <- as.data.frame(validPart <- fit$cluster)
 }
 if (algoName == "kmedoids") {
   if (!require("cluster")) {
@@ -63,7 +105,7 @@ if (algoName == "kmedoids") {
   }
   library(cluster)
   fit <- pam(fullData, numClusters)
-  mydata <- as.data.frame(fit$cluster)
+  mydata <- as.data.frame(validPart <- fit$cluster)
 }
 if (algoName == "AP") {
   if (!require("apcluster")) {
@@ -79,7 +121,7 @@ if (algoName == "AP") {
   } else {
     fit <- apcluster(negDistMat(r=2), fullDataPCA)
   }
-  mydata <- as.data.frame(labels(fit, type="enum"))
+  mydata <- as.data.frame(validPart <- labels(fit, type="enum"))
 }
 if (algoName == "SC") {
   if (!require("kernlab")) {
@@ -87,7 +129,7 @@ if (algoName == "SC") {
   }
   library(kernlab)
   fit <- specc(data.matrix(fullData), centers = numClusters)
-  mydata <- as.data.frame(fit[1:nrow(fullData)])
+  mydata <- as.data.frame(validPart <- fit[1:nrow(fullData)])
 }
 if (algoName == "GM") {
   if (!require("mclust")) {
@@ -95,12 +137,12 @@ if (algoName == "GM") {
   }
   library(mclust)
   fit <- Mclust(fullDataPCA, G = numClusters)
-  mydata <- as.data.frame(fit$classification)
+  mydata <- as.data.frame(validPart <- as.integer(fit$classification))
 }
 
 if (algoName == "hierarchical") {
   fit <- hclust(dist(fullData), method = "complete")
-  mydata <- as.data.frame(cutree(fit, numClusters))
+  mydata <- as.data.frame(validPart <- cutree(fit, numClusters))
 }
 if (algoName == "dbscan") {
   if (!require("dbscan")) {
@@ -109,9 +151,9 @@ if (algoName == "dbscan") {
   library(dbscan)
   fit <- dbscan(fullData, eps = dbscan.eps, minPts = 2)
   if ("0" %in% fit$cluster) {
-    mydata <- as.data.frame(fit$cluster + 1L)
+  mydata <- as.data.frame(validPart <- as.integer(fit$cluster + 1L))
   } else {
-    mydata <- as.data.frame(fit$cluster)
+  mydata <- as.data.frame(validPart <- as.integer(fit$cluster))
   } 
 }
 algo.time <- Sys.time() - as.numeric(algo.start, units = "secs")
@@ -151,24 +193,67 @@ if (algoName == "dbscan-est") {
   #eps.est2 <- round(temp[ext.point2[length(ext.point2)]], digits = 2)
   write.table(paste(eps.est.min, "-", eps.est.max, sep = ""), "/education/output/output_dbscan_eps_est.txt", col.names = F, row.names = F, quote = F)
 } else {
+
+   #----VALIDATION-----#
+   print("Step 5 of 6: Computing validation measures...")
+   
+ if(!require("clusterCrit")){
+    install.packages("clusterCrit", repos='http://cran.us.r-project.org')
+  }
+  library(cluster)
+  library(clusterCrit)
+  vmethod <- c("C_index","Calinski_Harabasz","Dunn", "Silhouette"
+                  ,"Davies_Bouldin",
+                  "Gamma",  "G_plus", "GDI42", "McClain_Rao", "PBM", "Point_Biserial",
+                  "Ray_Turi","Ratkowsky_Lance", "SD_Scat", "SD_Dis",
+                  "Tau", "Wemmert_Gancarski", "Xie_Beni")
+  validationInfo <- intCriteria(fullData, validPart, vmethod)
+
+#-------------------#
+
   print("Writing files...")
+  print("Step 6 of 6: Writing output files...")
+  
   output.start <- Sys.time()
   colnames(mydata) <- c("cluster")
   sample <- as.data.frame(rownames(as.data.frame(fullData)))
   colnames(sample) <- c("sample")
-  filename <- paste("/education/output/output_", algoName, "_annot.csv", sep="")
-  write.table(cbind(sample, mydata), file=filename, sep = ",", row.names = FALSE)
   
   combinedData <- cbind(fullDataPCA, mydata)
-  filename <- paste("/education/output/output_", algoName, "_PC.csv", sep="")
-  write.table(combinedData, file=filename, sep = ",", row.names = FALSE)
   ids <- as.data.frame(0:(nrow(combinedData)-1))
   rm(combinedData)
   colnames(ids) <- c("ID")
-  finalData <- cbind(ids, sample, fullDataPCA, mydata)
+  
+  
+  pcaCompress <- cbind(ids, sample, fullDataPCA[,1:min(3,ncol(fullDataPCA))], mydata)
   filename <- paste("/education/output/output_", algoName, "_full.csv", sep="")
+  write.table(pcaCompress, file = filename, sep = ",", row.names = FALSE)
+  rm(pcaCompress)
+
+  
+  finalData <- cbind(ids, sample, fullDataPCA, mydata)
+  filename <- paste("/education/output/output_", algoName, "_fullPCA.csv", sep="")
   write.table(finalData, file = filename, sep = ",", row.names = FALSE)
   rm(finalData)
+  #-------Writing TSNE----------------#
+  combinedTsne <- cbind(fullTsneData, mydata, sample)
+  tsneFile <- paste("/education/output/output_", algoName, "_TSNE.csv", sep="")
+  write.table(combinedTsne, file=tsneFile, sep =",", row.names = FALSE)
+  rm(combinedTsne)
+  
+  finalTsneData <- cbind(ids, sample, fullTsneData, mydata)
+   colnames(finalTsneData)[3:5] <- c("TSNE1", "TSNE2", "TSNE3")
+  fileTsnename <- paste("/education/output/output_", algoName, "_fullTsne.csv", sep="")
+  write.table(finalTsneData, file = fileTsnename, sep = ",", row.names = FALSE)
+  rm(finalTsneData)
+  
+  #----------------------------------#
+    
+  #Writing Valid info
+  filename <- paste("/education/output/output_", algoName, "_valid.csv", sep="")
+  write.table(validationInfo, file= filename, sep=",", row.names = FALSE)
+  rm(validationInfo)
+  
   input.output.time <- Sys.time() - as.numeric(output.start, units = "secs") + as.numeric(input.time, units = "secs")
   memory.used <- mem_used()/1e6
   benchmark.result <- t(data.frame(c(Time = as.character(Sys.time()), File = file.name, Algorithm = algoName, Cluster_by = cluster.by, IO_Time = input.output.time, PCA_Time = pca.time, Algorithm_Time = algo.time, Memory_used_MB = as.character(memory.used))))
@@ -176,3 +261,5 @@ if (algoName == "dbscan-est") {
   print(paste("Memory used (MB) = ", memory.used))
 }
 print(algoName);
+
+sink();
