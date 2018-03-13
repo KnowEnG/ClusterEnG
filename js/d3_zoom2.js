@@ -78,7 +78,9 @@ function d3zoom(file, id, algorithm, xycode) {
 	
 	//store saved id
 	var remember_index=[];
-
+	
+	$('#'+id).append('<div class="row" id="' + algorithm + '-pcaPlots" tabindex="0"></div>');
+	
 	//clear saved id 
 	function clear_remember_index(remember_index){
 		for (i=0;i<remember_index.length;i++){
@@ -186,9 +188,15 @@ function d3zoom(file, id, algorithm, xycode) {
 	//draw Charts
 	function ready(error,Data) {
 		if (error) throw error;
-		drawChart(Data,pca[0][0],pca[0][1]);
-		drawChart(Data,pca[1][0],pca[1][1]);
-		drawChart(Data,pca[2][0],pca[2][1]);
+		if(d3.keys(Data[0]).length <= 5){
+			drawChart(Data,pca[0][0],pca[0][1]);
+		}
+		else{
+			drawChart(Data,pca[0][0],pca[0][1]);
+			drawChart(Data,pca[1][0],pca[1][1]);
+			drawChart(Data,pca[2][0],pca[2][1]);
+		}
+	
 
 	}
 
@@ -203,11 +211,12 @@ function d3zoom(file, id, algorithm, xycode) {
 		var axes = d3.keys(data[0]).filter(function(d) { 
 			return d!== 'ID';
 		});
+		
 		 //axes=["sample", "PC1", "PC2", "PC3", "cluster"]
 
 		//x and y axis labels
 		axis_labels[n] = axes;
-
+		
 		//max extent of data in x direction
 		var x_extent = d3.extent(data,function(d) {
 			return parseFloat(d[axis_labels[n][plotx]]);
@@ -238,7 +247,7 @@ function d3zoom(file, id, algorithm, xycode) {
 	
 		
 		//Give appropriate width and height to canvas element (svg[n]).
-		svg[n] = d3.select('#'+id).append('svg')
+		svg[n] = d3.select('#' + algorithm + '-pcaPlots').append('svg')
 			.attr('width', width+margin.right+margin.left)
 			.attr('height', height+margin.top+margin.bottom)
 			
@@ -287,9 +296,9 @@ function d3zoom(file, id, algorithm, xycode) {
 					"#aec7e8","#ffbb78","#98df8a","#ff9896","#c5b0d5","#c49c94","#f7b6d2","#c7c7c7","#dbdb8d","#9edae5"]);
 
 		//mouseover information
-		var tip = d3.select("#sample-label-"+ algorithm).append("div")
-			.attr("class", "tooltip")
-			.style("opacity", 0.5);
+		var tip = d3.select("body").append("div")	
+		    .attr("class", "tooltip")				
+		    .style("opacity", 0);
 
 		//Appends the data as circles to points_svg[n].
 
@@ -317,8 +326,9 @@ function d3zoom(file, id, algorithm, xycode) {
 								.duration(200)
 								.style("opacity", .9)
 								.style("display","inline");
-								tip.html("<div><span style='color:red;left:40px; top:500px; position:absolute;'> Sample: " + d["sample"] + 
-								"</span></div>")
+							tip.html("Sample: " + d["sample"])
+								.style("left", (d3.event.pageX) + "px")		
+                				.style("top", (d3.event.pageY - 28) + "px");	
 							//tip.html("<h8>Sample: " + d["sample"] + "</h8>")
 							//.attr("transform", "translate(" + margin.left + "," + margin.top + ")")
 								//.style("left","translate("+d.cx + "8)" + "px")
@@ -477,10 +487,12 @@ function d3zoom(file, id, algorithm, xycode) {
 	var fo=true;
 	//d3.select(document).on("keydown", keyDown);
 	//$("#"+id).attr('tabindex',-1).focus(function(){fo=true;console.log('mew')})
-	d3.select("#"+id).on("keydown", keyDown);
+	
+	d3.select('#' + algorithm + '-pcaPlots').on("keydown", keyDown);
 	function keyDown() {
 		d3.event.preventDefault();
-		if(fo=true){
+	
+		if(fo===true){
 		
 		//Interaction: Brush and link enabled, and zoom/pan disabled. (shift-key pressed)
 		if (d3.event.keyCode == 16) {
@@ -501,10 +513,10 @@ function d3zoom(file, id, algorithm, xycode) {
 	
 	//Handle keyboard events for key releases.
 	//$("#"+id).attr('tabindex',-1).focus(function(){fo=true;console.log('mewww')})
-	d3.select("#"+id).on("keyup", keyUp);
+	d3.select('#' + algorithm + '-pcaPlots').on("keyup", keyUp);
 	function keyUp() {
 		d3.event.preventDefault();
-		if(fo=true){
+		if(fo===true){
 		
 		//Interaction: Brush and link disabled, and zoom/pan enabled. (shift-key released)
 		if (d3.event.keyCode == 16) {
